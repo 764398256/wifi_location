@@ -1,5 +1,7 @@
 close all; clear all;
 file_folder = '../data/empty/';
+figure_folder='../figure/';
+mat_folder='../mat/';
 files = dir(strcat(file_folder,'*.dat'));
 addpath('../linux-80211n-csitool-supplementary/matlab/');
 for i = 1:numel(files)
@@ -51,9 +53,9 @@ for i=1:x*y
       set(ax(i), 'Position', [pos(1) pos(2) 0.85*pos(3) 0.8*pos(4)]);
 end
 subtitle( upper(strrep(char(f_nonext),'_',' ')) );
-fign = char(strcat('figure/',f_nonext,'_total.fig'));
+fign = char(strcat(figure_folder,f_nonext,'_total.fig'));
 savefig(h, fign);
-mat = char(strcat('mat/',f_nonext,'.mat' ));
+mat = char(strcat(mat_folder,f_nonext,'.mat' ));
 sample_pwM = squeeze(pwM(sample_tx,sample_rx,:,1:min_len));
 save(mat, 'sample_pwM');
 close(h);
