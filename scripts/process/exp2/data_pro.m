@@ -1,6 +1,6 @@
 close all; clear all;
 data_path='../../data/exp2/'
-file_folder = strcat(data_path, 'case3/');
+file_folder = strcat(data_path, 'case1/');
 figure_folder=strcat(data_path, 'figure/');
 mat_folder=strcat(data_path,'mat/');
 files = dir(strcat(file_folder,'*.dat'));
@@ -33,15 +33,17 @@ min_len = inf;
         pwM(1:tx_real,1:rx_real,:,j) = pw;
     end
 % plot each time-subcarrier-CSI graph at different tx*rx channel
+startcut = 150;
 h = figure;
 for x = 1:3
     for y = 1:3
         id = (x-1)*3+y;
         ax(id) = subplot(3,3,id);
-        surf(squeeze(pwM(x,y,:,1:min(min_len, numel(csi_trace) ))),'linestyle','none');
+        surf(squeeze(pwM(x,y,:,startcut:min(min_len, numel(csi_trace) ))),'linestyle','none');
         ylabel('sc');
         xlabel('t(s)');
-        zlabel('SNR [dB]');
+        zlim(ax(id), [0 40]);
+        zlabel('Magnitude[dB]');
         title(sprintf('tx = %d,rx = %d', x, y));
     end
 end
@@ -57,7 +59,7 @@ subtitle( upper(strrep(char(f_nonext),'_',' ')) );
 fign = char(strcat(figure_folder,f_nonext,'_total.fig'));
 savefig(h, fign);
 mat = char(strcat(mat_folder,f_nonext,'.mat' ));
-sample_pwM = squeeze(pwM(sample_tx,sample_rx,:,1:min(numel(csi_trace), min_len)));
+sample_pwM = squeeze(pwM(sample_tx,sample_rx,:, startcut:min(numel(csi_trace), min_len)));
 save(mat, 'sample_pwM');
 close(h);
 % subplot(312);
