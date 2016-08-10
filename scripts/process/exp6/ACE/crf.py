@@ -3,23 +3,28 @@ import numpy as np
 import pdb
 file_p = '../../../data/exp6/mat/'
 histo = loadmat(file_p + 'histo.mat')
+edges = loadmat(file_p + 'edges.mat')
 histo = histo['histo']
+edges = edges['all_edges']
 (voxel_num, stream_num, d, nbins) = np.shape(histo)
 pdb.set_trace()
 
 from pystruct import learners
 import pystruct.models as crfs
 from pystruct.utils import SaveLogger
-import pdb
 
 
-class DataTrigger(object):
-    def __init__(self, histo, gridmap):
+class CRF(object):
+    def __init__(self, histo, edges):
         self.histo = histo
-        self.n_nodes = n_nodes
-        self.n_features = n_features
-    
-    def nodes(self, gridmap):
+        (voxel_num, stream_num, d, nbins) = np.shape(self.histo)
+        self.edges = edges
+        self.n_nodes = voxel_num
+        self.n_edges = len(edges)
+        self.n_features = 1
+        self.n_edge_features = 1
+
+    def nodes(self, gridmap):        
         
 
 data_train = pickle.load(open("data_train.pickle"))
