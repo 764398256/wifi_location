@@ -20,9 +20,9 @@ for i = 1: stream_num* dim
     d = mod(i + dim - 1,dim) + 1;
     for j = 1: voxel_num
         [h,~]=histcounts(M(j, s,d , :), edges, 'Normalization','probability');
-        histo(i, j, 1, :)  = conv (h, gaussFilter, 'same')';
+        histo(j, i, 1, :)  = conv (h, gaussFilter, 'same')';
         [ho,~]= histcounts( reshape( M([1: (j-1), (j+1):end], s, d,:  ), sample_len*(voxel_num-1) ,1) , edges, 'Normalization','probability');
-        histo(i, j, 2, :)  = conv (ho, gaussFilter, 'same')';
+        histo(j, i, 2, :)  = conv (ho, gaussFilter, 'same')';
     end
 end
 %fingerprint = reshape(histo, stream_num* dim*voxel_num*2*(srange(2) - srange(1))/step );

@@ -1,10 +1,10 @@
 close all; clear all;
 data_path='../../data/exp6/';
 %data: ping rate: 10 packets/s
-file_folder = strcat(data_path, 'data/'); 
+file_folder = strcat(data_path, 'data/multi/'); 
 figure_folder=strcat(data_path, 'figure/'); mkdir(data_path, 'figure');
 mat_folder=strcat(data_path,'mat/'); mkdir(data_path, 'mat');
-files = dir(strcat(file_folder,'*.dat'));
+files = dir(strcat(file_folder,'m*_fg_three*.dat'));
 addpath('../../../../linux-80211n-csitool-supplementary/matlab/');
 for i = 1:numel(files)
     f_name = files(i).name;
