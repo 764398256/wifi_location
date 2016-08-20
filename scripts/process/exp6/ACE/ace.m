@@ -9,7 +9,7 @@ mat_folder=strcat(data_path,'mat/');
 %empty_file=dir(strcat(file_folder,'m*_empty.mat'));
 
 stand_file=dir(strcat(file_folder,'m*_fg_s*.mat'));
-multi_tg_file = strcat(file_folder,'m*_fg_three_13_17_112.mat');
+multi_tg_file = dir(strcat(file_folder,'m*_fg_three_13_17_112.mat'));
 map = [-1, 1, -1, 1, -1, 1, -1; ...\
         -1, 1, -1, 1, -1, 1, -1; ...\
         -1, 1, -1, 1, -1, 1, -1; ...\
@@ -42,6 +42,10 @@ edge_file = char(strcat(mat_folder,'edges.mat' ));
 save(edge_file, 'edges');
 
 %generate sampling data(single target)
+
+train_data = 0;
+
+if train_data == 1
 label = zeros(numel(stand_file), 2);
 for i= 1:numel(stand_file)
     fname = stand_file(i).name;
@@ -63,19 +67,24 @@ save(histo_file, 'histo');
 save(sample_file, 'M');
 save(sample_label_file, 'label');
 
-% generate test data for multiple targets
-M_test = zeros(stream_num, sample_len );
-for i = 1: numels(multi_tg_file)
-load(multi_tg_file);
-h_avg_amp = amplitude(sample_csiM(:,:,:,1:sample_len));
-M_test(i,:) = mean(h_avg_amp,1);
-end
-M_test_file =  char(strcat(mat_folder,'M_test.mat' ));
-save(M_test_file, 'M_test');
-
 figure;
 subplot(211);
 plot([-30+0.5:0.5:30], squeeze(histo(1,2,1, :)));
 subplot(212);
 plot([-30+0.5:0.5:30], squeeze(histo(1,2,2, :)));
+
+end
+% generate test data for multiple targets
+M_test = zeros(stream_num, sample_len );
+for i = 1: numel(multi_tg_file)
+fname = multi_tg_file(i).name;
+disp(fname);
+prefix = fname(3:end-4);
+load(strcat(file_folder,fname));
+h_avg_amp = amplitude(sample_csiM(:,:,:,1:sample_len));
+M_test(i,:) = mean(h_avg_amp,1);
+end
+M_test_file =  char(strcat(mat_folder,'M_test',prefix , '.mat' ));
+save(M_test_file, 'M_test');
+
 

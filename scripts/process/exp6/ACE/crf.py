@@ -1,7 +1,7 @@
 from scipy.io import loadmat
 import numpy as np
 import pdb
-
+import pickle
 from pystruct import learners
 import pystruct.models as crfs
 from pystruct.utils import SaveLogger
@@ -27,9 +27,28 @@ class CRF(object):
     def generate_test_data(self, seq):
         (dim, sample_len) = np.shape(seq)
         dataX = []
+        pdb.set_trace()
         for i in xrange(sample_len):
-            pass
-            
+            edges = self.edges.astype('int64')
+            try:
+                node_feature = np.array([ 
+                                        [ -np.log(self.histo[t][j][0][ self.rss_range( seq[j][i] ) ]) for k in xrange(2) for j in xrange(dim) ] for t in xrange(self.n_nodes)])
+
+                edge_feature = np.array([ 
+                                        [ (1 + np.exp(-( 
+                                                    self.histo[t[0] ][j][k%2][self.rss_range(seq[j][i])] 
+                                                    - self.histo[t[1]][j][(k+1)%2][self.rss_range(seq[j][i])])**2
+                                          ) )/2 for k in xrange(2) 
+                                        for j in xrange(dim) ] + [1./2, 1./2]
+                                        for t in self.edges
+                                        ])
+                dataX.append(tuple((node_feature, edges, edge_feature))) 
+            except:
+                pdb.set_trace()
+                print i
+            else:
+                pass
+        return dataX
 
         
     def generate_data(self, seq, label):
@@ -49,21 +68,18 @@ class CRF(object):
             dataY.append(l)
             edges = self.edges.astype('int64')
             node_feature = np.array([ 
-                                        [ -np.log(self.histo[t][j][ int(location[t] == 0) ]
-                                            [ self.rss_range( seq[t][j][i% subset] ) ]) 
+                                        [ -np.log(self.histo[t][j][k]
+                                            [ self.rss_range( seq[t][j][i% subset] ) ]) for k in xrange(2)
                                         for j in xrange(dim) ]
                                         for t in xrange(self.n_nodes) 
                                     ])
 
             edge_feature = np.array([ 
                                         [ (1 + np.exp(-( 
-                                                    self.histo[t[0] ][j][ int(location[t[0] ] == 0) ]
-                                                                [self.rss_range(seq[t[0] ][j][i% subset])] 
-                                                    - self.histo[t[1]][j][int(location[t[1]] == 0)]
-                                                                [self.rss_range(seq[t[1]][j][i% subset])])**2
-                                          ) )/2 
-                                        if (location[t[0]] != location[t[1]]) else 0 
-                                        for j in xrange(dim) ] 
+                                                    self.histo[t[0] ][j][k%2][self.rss_range(seq[t[0] ][j][i% subset])] 
+                                                    - self.histo[t[1]][j][(k+1)%2][self.rss_range(seq[t[1]][j][i% subset])])**2
+                                          ) )/2 for k in xrange(2) 
+                                        for j in xrange(dim) ]  
                                         for t in self.edges
                                     ])
             dataX.append(tuple((node_feature, edges, edge_feature))) 
@@ -86,7 +102,7 @@ class CRF(object):
 #                inactive_threshold=1e-10, inactive_window=10, batch_size=100)
 
         
-        self.learner = learners.FrankWolfeSSVM(model=self.model,verbose=3, C=.1, max_iter=1000)
+        self.learner = learners.FrankWolfeSSVM(model=self.model,verbose=3, C=.1, max_iter=100)
         self.learner.fit(trainX, trainY)
         pdb.set_trace()
 
@@ -97,25 +113,44 @@ class CRF(object):
     def evaluate(self, y_pred, y_real):
         pass
 
+def pickle_save(fname, data):
+    with open(fname, 'wb') as output:
+        pickle.dump(data, output, pickle.HIGHEST_PROTOCOL)
+        print "saved to %s"%fname
+
+def pickle_load(fname):
+    with open(fname, 'rb') as _input:
+        return pickle.load(_input)
+        
 if __name__ == '__main__':
         
     file_p = '../../../data/exp6/mat/'
     histo = loadmat(file_p + 'histo.mat')
     edges = loadmat(file_p + 'edges.mat')
     samples = loadmat(file_p + 'sample.mat')
-    test = loadmat(file_p + 'M_test.mat')
+    test = loadmat(file_p + 'M_test_fg_three_13_17_112.mat')
     sample_label = loadmat(file_p + 'sample_label.mat')
     histo = histo['histo']
     edges = edges['edges']
     samples = samples['M']
     test_case = test['M_test']
     sample_label = sample_label['label']
-    pdb.set_trace()
+    train_flag = 0
+    model_file = 'model.pkl'
+    if train_flag:
+        crf_instance = CRF(histo, edges)
+        [trainX, trainY] = crf_instance.generate_data(samples, sample_label)
+        crf_instance.trainer(trainX, trainY)
+        pickle_save(model_file,crf_instance)
+        print crf_instance.learner.score(trainX, trainY), crf_instance.predict(trainX[0:2])
 
-    crf_instance = CRF(histo, edges)
-    [trainX, trainY] = crf_instance.generate_data(samples, sample_label)
-    crf_instance.trainer(trainX, trainY)
-    crf_instance.score(trainX, trainY)
+    else:
+        crf_instance = pickle_load(model_file)
+
+    testX = crf_instance.generate_test_data(test_case)
+  
+    print crf_instance.predict(testX) 
+#crf_instance.score(trainX, trainY)
 #print crf_instance.predict(trainX)
 
 
