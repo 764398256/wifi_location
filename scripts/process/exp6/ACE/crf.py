@@ -5,7 +5,8 @@ import pickle
 from pystruct import learners
 import pystruct.models as crfs
 from pystruct.utils import SaveLogger
-
+import sys
+import maxflow
 
 class CRF(object):
     def __init__(self, histo, edges):
@@ -16,6 +17,7 @@ class CRF(object):
         self.n_edges = len(edges)
         self.n_features = 1
         self.n_edge_features = 1
+        self.n_states = 2
         self.rss_start = -30
         self.rss_end = 30
         self.rss_step = 0.5
@@ -24,33 +26,117 @@ class CRF(object):
     def rss_range(self, val):
         return np.floor(( val - self.rss_start) / (self.rss_end - self.rss_start ) * self.nbins ) 
 
-    def generate_test_data(self, seq):
+    def map_estimate(self, seq):
         (dim, sample_len) = np.shape(seq)
         dataX = []
-        pdb.set_trace()
-        for i in xrange(sample_len):
-            edges = self.edges.astype('int64')
-            try:
-                node_feature = np.array([ 
-                                        [ -np.log(self.histo[t][j][0][ self.rss_range( seq[j][i] ) ]) for k in xrange(2) for j in xrange(dim) ] for t in xrange(self.n_nodes)])
-
-                edge_feature = np.array([ 
-                                        [ (1 + np.exp(-( 
-                                                    self.histo[t[0] ][j][k%2][self.rss_range(seq[j][i])] 
-                                                    - self.histo[t[1]][j][(k+1)%2][self.rss_range(seq[j][i])])**2
-                                          ) )/2 for k in xrange(2) 
-                                        for j in xrange(dim) ] + [1./2, 1./2]
-                                        for t in self.edges
-                                        ])
-                dataX.append(tuple((node_feature, edges, edge_feature))) 
-            except:
-                pdb.set_trace()
-                print i
+        w = self.learner.w
+        edge_dict = {}
+        max_iter = 100
+        for i, edge in enumerate(self.edges):
+            if edge[0] not in edge_dict.keys():
+               edge_dict[ edge[0] ] = [(i, edge)]
             else:
-                pass
-        return dataX
+               edge_dict[ edge[0] ] = edge_dict[ edge[0] ] + [(i, edge)]
+                   
+        for i in xrange(sample_len):
+            labels = np.array([ int(np.random.random()*self.n_states) for i in xrange(self.n_nodes)]) 
+            # build matrix D
+            D = np.array([ [ 
+                            [-np.log(self.histo[t][j][k][ self.rss_range( seq[j][i] ) ]) for k in xrange(self.n_states) ]
+                            for j in xrange(dim)]  
+                            for t in xrange(self.n_nodes) ])
 
-        
+            # build matrix v
+            v = np.array([[ [ [  (1 + np.exp(-( 
+                                                    self.histo[t[0]][j][k]
+                                                                [self.rss_range(seq[j][i])] 
+                                                    - self.histo[t[1]][j][l]
+                                                                [self.rss_range(seq[j][i])])**2
+                                          ) )/2 
+                        for l in xrange(self.n_states)] 
+                        for k in xrange(self.n_states) ]
+                        for j in xrange(dim)]
+                        for t in self.edges])
+            labels = self.cv_alpha_extension(D, w, max_iter, edge_dict, v, labels)
+            print labels
+            pdb.set_trace()
+
+    def cv_alpha_extension(self, D, w, max_iter, edge_dict, v, labels):
+        '''
+            D: unary cost for each label for different nodes, shape of (num_nodes,num_features, num_labels)
+            edge_dict { key:id of first_node, value: (id in edge feature array 'v', list of edges starting with first_node) }
+            v: edge feature array, shape of (id, features, n_states, n_states )
+            '''
+        assert labels.shape[0] == D.shape[0]
+        assert D.shape[2] == self.n_states
+
+        n_nodes = labels.shape[0] 
+        n_features = D.shape[1]
+        n_edge_features = v.shape[1]
+        success = 0
+        best_energy = sys.maxint
+        w_offset = self.n_states* n_features
+        for it in xrange(max_iter):
+            print 'Iteration %d'%it
+            # Process the neighbors
+            for alpha in xrange(self.n_states):
+                # create the graph
+                g = maxflow.GraphFloat()
+                g.add_nodes(n_nodes)
+
+                for node_index in xrange(n_nodes):
+                    label = labels[node_index]
+                    # TBD
+                    t1 = sum([ w[i + alpha* n_features] * D[node_index][i] [alpha] for i in xrange(n_features) ])
+                    t2 = sys.maxint
+                    if label != alpha:
+                        t2 = sum([ w[i + label* n_features] * D[node_index][i] [label] for i in xrange(n_features) ])               
+                        pdb.set_trace()
+                    pdb.set_trace()
+                    print t1, t2
+                    g.add_tedge(node_index, t1, t2)
+                                     
+                    if node_index not in edge_dict.keys():
+                        continue
+                        
+                    for (_id, edge) in edge_dict[node_index]:
+                        assert edge[0] == node_index
+                        nnode_index = edge[1]
+                        nlabel = labels[nnode_index]
+                        nnstates = self.n_states ** 2 
+                        dist_label_alpha = sum([ np.mean([w[ w_offset + i*nnstates + label * self.n_states + alpha ]*v[_id][i][label][alpha],w[ w_offset + i*nnstates + alpha * self.n_states + label ]*v[_id][i][alpha][label]])  for i in xrange(n_edge_features)])
+                    
+
+                        if label == nlabel:
+                            g.add_edge(node_index, nnode_index, dist_label_alpha, dist_label_alpha)
+                            continue
+                        # if labelk are different , add an extra node
+                        dist_nlabel_alpha = sum([ np.mean([w[w_offset + i*nnstates + self.n_states* nlabel + alpha]*v[_id][i][nlabel][alpha],w[ w_offset + i* nnstates + self.n_states* alpha + nlabel]*v[_id][i][alpha][nlabel]])  for i in xrange(n_edge_features)])
+                        dist_label_nlabel = sum([ np.mean([w[w_offset + i*nnstates + self.n_states*nlabel + label]*v[_id][i][nlabel][label],w[w_offset + i*nnstates + self.n_states* label + nlabel]*v[_id][i][label][nlabel]])  for i in xrange(n_edge_features)])
+                        print dist_label_alpha, dist_label_nlabel, dist_nlabel_alpha,  
+                        extra_node = g.add_nodes(1)
+                        g.add_tedge(extra_node, 0, dist_label_nlabel)
+                        g.add_edge(node_index, extra_node, dist_label_alpha, dist_label_alpha )
+                        g.add_edge(node_index, extra_node, dist_nlabel_alpha, dist_nlabel_alpha )
+
+                energy = g.maxflow()
+                for node_index in xrange(n_nodes):
+                    if g.get_segment(node_index) == 1: # SINK = 1, SOUCE = 0
+                        labels[node_index] = alpha
+            print energy 
+            if energy < best_energy:
+                success = 1
+                best_energy = energy
+                print "Energy of the last cut (alpha = %r): %r"%(alpha, energy)
+
+            if not success:
+                print 'failed!'
+                break
+
+        return labels
+
+               
+
     def generate_data(self, seq, label):
         '''
         seq: list of [dim * sample_len], which is a combination of RSS value of a single person standing at different locations
@@ -68,18 +154,21 @@ class CRF(object):
             dataY.append(l)
             edges = self.edges.astype('int64')
             node_feature = np.array([ 
-                                        [ -np.log(self.histo[t][j][k]
-                                            [ self.rss_range( seq[t][j][i% subset] ) ]) for k in xrange(2)
+                                        [ -np.log(self.histo[t][j][ int(location[t] == 0) ]
+                                            [ self.rss_range( seq[t][j][i% subset] ) ]) 
                                         for j in xrange(dim) ]
                                         for t in xrange(self.n_nodes) 
                                     ])
 
             edge_feature = np.array([ 
                                         [ (1 + np.exp(-( 
-                                                    self.histo[t[0] ][j][k%2][self.rss_range(seq[t[0] ][j][i% subset])] 
-                                                    - self.histo[t[1]][j][(k+1)%2][self.rss_range(seq[t[1]][j][i% subset])])**2
-                                          ) )/2 for k in xrange(2) 
-                                        for j in xrange(dim) ]  
+                                                    self.histo[t[0] ][j][ int(location[t[0] ] == 0) ]
+                                                                [self.rss_range(seq[t[0] ][j][i% subset])] 
+                                                    - self.histo[t[1]][j][int(location[t[1]] == 0)]
+                                                                [self.rss_range(seq[t[1]][j][i% subset])])**2
+                                          ) )/2 
+                                        if (location[t[0]] != location[t[1]]) else 0 
+                                        for j in xrange(dim) ] 
                                         for t in self.edges
                                     ])
             dataX.append(tuple((node_feature, edges, edge_feature))) 
@@ -87,6 +176,7 @@ class CRF(object):
         return dataX, dataY
 
 
+        
     def trainer(self, trainX, trainY):
         inf_method = ('ogm', {'alg': 'fm'})
         C = 0.01
@@ -104,10 +194,12 @@ class CRF(object):
         
         self.learner = learners.FrankWolfeSSVM(model=self.model,verbose=3, C=.1, max_iter=100)
         self.learner.fit(trainX, trainY)
-        pdb.set_trace()
 
-    def predict(self, testX):
-        y_pred = self.learner.predict(testX)
+    def predict(self, testX, validates):
+        if validates:
+            y_pred = self.learner.predict(testX)
+        else:
+            y_pred = self.map_estimate(testX)
         return y_pred
        
     def evaluate(self, y_pred, y_real):
@@ -128,6 +220,7 @@ if __name__ == '__main__':
     histo = loadmat(file_p + 'histo.mat')
     edges = loadmat(file_p + 'edges.mat')
     samples = loadmat(file_p + 'sample.mat')
+    #test = loadmat(file_p + 'M_test_fg_three_13_17_112.mat')
     test = loadmat(file_p + 'M_test_fg_three_13_17_112.mat')
     sample_label = loadmat(file_p + 'sample_label.mat')
     histo = histo['histo']
@@ -136,20 +229,23 @@ if __name__ == '__main__':
     test_case = test['M_test']
     sample_label = sample_label['label']
     train_flag = 0
+    
     model_file = 'model.pkl'
     if train_flag:
         crf_instance = CRF(histo, edges)
         [trainX, trainY] = crf_instance.generate_data(samples, sample_label)
         crf_instance.trainer(trainX, trainY)
         pickle_save(model_file,crf_instance)
-        print crf_instance.learner.score(trainX, trainY), crf_instance.predict(trainX[0:2])
+        print crf_instance.learner.score(trainX, trainY), crf_instance.predict(trainX[0:2], True)
+        pdb.set_trace()
 
     else:
         crf_instance = pickle_load(model_file)
 
-    testX = crf_instance.generate_test_data(test_case)
-  
-    print crf_instance.predict(testX) 
+    [trainX, trainY] = crf_instance.generate_data(samples, sample_label)
+    print crf_instance.predict(trainX[0:2], True)
+    print crf_instance.predict(samples[0], False) 
+#labels = crf_instance.predict(test_case, 1)
 #crf_instance.score(trainX, trainY)
 #print crf_instance.predict(trainX)
 
