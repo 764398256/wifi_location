@@ -25,7 +25,6 @@ class CRF(object):
 
     def rss_range(self, val):
         return np.floor(( val - self.rss_start) / (self.rss_end - self.rss_start ) * self.nbins ) 
-
     def map_estimate(self, seq):
         (dim, sample_len) = np.shape(seq)
         dataX = []
