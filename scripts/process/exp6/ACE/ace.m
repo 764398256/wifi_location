@@ -10,24 +10,24 @@ mat_folder=strcat(data_path,'mat/');
 
 stand_file=dir(strcat(file_folder,'m*_fg_s*.mat'));
 multi_tg_file = dir(strcat(file_folder,'m*_fg_three_13_17_112.mat'));
-map = [-1, 1, -1, 1, -1, 1, -1; ...\
-        -1, 1, -1, 1, -1, 1, -1; ...\
-        -1, 1, -1, 1, -1, 1, -1; ...\
-        -1, 1, -1, 1, -1, 1, -1; ...\
-        -1, 1, -1, 1, -1, 1, -1; ...\
-        -1, 1, -1, 1, -1, 1, -1; ...\
-        -1, 1, -1, 1, -1, 1, -1; ...\
-        -1, 1, -1, 1, -1, 1, -1; ...\
-        -1, 1, -1, 1, -1, 1, -1; ...\
-        -1, 1, -1, 1, -1, 1, -1; ...\
-        -1, 1, -1, 1, -1, 1, -1; ...\
-        -1, 1, -1, 1, -1, 1, -1;...\
-        -1, 1, -1, 1, -1, 1, -1; ...\
-        1, 1, 1, 1, 1, 1, 1; ...\
-        1, 1, 1, 1, 1, 1, 1; ...\
-        1, 1, -1, -1, -1, 1, 1 ...\
-];
-
+% map = [-1, 1, -1, 1, -1, 1, -1; ...\
+%         -1, 1, -1, 1, -1, 1, -1; ...\
+%         -1, 1, -1, 1, -1, 1, -1; ...\
+%         -1, 1, -1, 1, -1, 1, -1; ...\
+%         -1, 1, -1, 1, -1, 1, -1; ...\
+%         -1, 1, -1, 1, -1, 1, -1; ...\
+%         -1, 1, -1, 1, -1, 1, -1; ...\
+%         -1, 1, -1, 1, -1, 1, -1; ...\
+%         -1, 1, -1, 1, -1, 1, -1; ...\
+%         -1, 1, -1, 1, -1, 1, -1; ...\
+%         -1, 1, -1, 1, -1, 1, -1; ...\
+%         -1, 1, -1, 1, -1, 1, -1;...\
+%         -1, 1, -1, 1, -1, 1, -1; ...\
+%         1, 1, 1, 1, 1, 1, 1; ...\
+%         1, 1, 1, 1, 1, 1, 1; ...\
+%         1, 1, -1, -1, -1, 1, 1 ...\
+% ];
+map = ones(15,3);
 [row, col] = size(map);
 voxel_num = sum(sum(map == 1));
 pos = find(map == 1);
@@ -38,12 +38,10 @@ subcarrier_num = 30;
 M = zeros(voxel_num,stream_num, subcarrier_num,  sample_len*2);
 %generate edges
 edges = bfs(map, index);
-edge_file = char(strcat(mat_folder,'edges.mat' ));
-save(edge_file, 'edges');
 
 %generate sampling data(single target)
 
-train_data = 0;
+train_data = 1;
 
 if train_data == 1
 label = zeros(numel(stand_file), 2);
@@ -59,13 +57,20 @@ for i= 1:numel(stand_file)
 end
 M = mean(M, 3);
 histo = fingerprint_builder(M); 
-histo_file = char(strcat(mat_folder,'histo.mat' ));
-sample_file = char(strcat(mat_folder, 'sample.mat'));
-sample_label_file = char(strcat(mat_folder, 'sample_label.mat'));
-M = squeeze(M);
-save(histo_file, 'histo');
-save(sample_file, 'M');
-save(sample_label_file, 'label');
+Config.histo = histo;
+Config.edges = edges;
+Config.mapper= index;
+Config.grid  = map;
+Train.seq =  squeeze(M);
+Train.label = label;
+
+
+config_file = char(strcat(mat_folder,'config.mat' ));
+save(config_file, 'Config');
+train_file = char(strcat(mat_folder, 'sample.mat'));
+save(train_file, 'Train');
+
+
 
 figure;
 subplot(211);
@@ -84,7 +89,8 @@ load(strcat(file_folder,fname));
 h_avg_amp = amplitude(sample_csiM(:,:,:,1:sample_len));
 M_test(i,:) = mean(h_avg_amp,1);
 end
-M_test_file =  char(strcat(mat_folder,'M_test',prefix , '.mat' ));
-save(M_test_file, 'M_test');
+Test.seq=M_test;
+M_test_file =  char(strcat(mat_folder,'Test',prefix , '.mat' ));
+save(M_test_file, 'Test');
 
 
