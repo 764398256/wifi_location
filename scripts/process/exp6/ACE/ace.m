@@ -32,7 +32,7 @@ map = ones(15,3);
 voxel_num = sum(sum(map == 1));
 pos = find(map == 1);
 index = [mod(pos + row - 1, row) + 1, floor((pos + row - 1)/row)];
-sample_len = 600;
+sample_len = 10;
 stream_num = 3;
 subcarrier_num = 30;
 M = zeros(voxel_num,stream_num, subcarrier_num,  sample_len*2);
@@ -44,7 +44,6 @@ edges = bfs(map, index);
 train_data = 1;
 
 if train_data == 1
-label = zeros(numel(stand_file), 2);
 for i= 1:numel(stand_file)
     fname = stand_file(i).name;
     disp(fname);
@@ -53,15 +52,23 @@ for i= 1:numel(stand_file)
     voxel_id = find(ismember(index, [tag(2), tag(3)], 'rows'));
     h_avg_amp = amplitude(sample_csiM(:,:,:,1:sample_len));
     static = length(strfind(fname, 'static'));
-    M( voxel_id, tag(1), :, ( static )* sample_len + 1: (static + 1) *sample_len ) = h_avg_amp;
+    M(voxel_id, tag(1), :, ( static )* sample_len + 1: (static + 1) *sample_len ) = h_avg_amp;
 end
+
 M = mean(M, 3);
 histo = fingerprint_builder(M); 
 Config.histo = histo;
 Config.edges = edges;
 Config.mapper= index;
 Config.grid  = map;
-Train.seq =  squeeze(M);
+M = squeeze(M);
+K = zeros(voxel_num*sample_len*2,stream_num);
+label = zeros(voxel_num*sample_len*2,1);
+for i = 1: voxel_num
+  K((i-1)*sample_len*2+ 1:i*sample_len*2, :) = squeeze(M(i, :, :))';
+  label((i-1)*sample_len*2+ 1:i*sample_len*2) = i;
+end
+Train.seq =  K;
 Train.label = label;
 
 

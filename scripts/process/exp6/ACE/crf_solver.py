@@ -1,69 +1,86 @@
+import scipy.io as spio
 import numpy as np
-
+import pdb
+import itertools
+import pickle
+DEBUG = 'debug'
+def LOG(log_level, mesg):
+    if log_level == DEBUG:
+        print mesg
+ITER_ROUND = 1
 class CRF_SOLVER(object):
-    def __init__(self, _lambda = 0.1, histo, grid, edges, mapper ):
-        self.grid = grid
-        self._lambda = _lambda
-        self.histo = histo
-        (voxel_num, stream_num, d, nbins) = np.shape(self.histo)
-        self.edges = self.generate_node
-        self.n_nodes = voxel_num
-        self.n_edges = len(edges)
-        self.n_states = 2
+    def __init__(self, config):
+        self.grid = np.array(config['grid'])
+        self.histo = np.array(config['histo'])
+        self.edges = np.array(config['edges'])
+        self.mapper = np.array(config['mapper'])
+        self.states = 2
+        self._lambda = 0.5
         self.rss_start = -30
         self.rss_end = 30
         self.rss_step = 0.5
         self.nbins = (self.rss_end - self.rss_start)/self.rss_step
 
-        
     def rss_range(self, val):
         return np.floor(( val - self.rss_start) / (self.rss_end - self.rss_start ) * self.nbins ) 
         
-    def objective_and_gradients_batch(self, seq, trainY, w):
-        (sample_len, tuple_num) = np.zeros( trainX )
-        L = self._lambda * np.norm(w)
+    def objective_and_gradients_batch(self, seqs, labels, w, flag):
+        (sample_len, dim) = np.shape( seqs )
         logl = 0
         sigma2 = 10
-        states = self.n_states
-        g = np.zeros(w.size())
+        g = np.zeros(len(w))
         for i in xrange(sample_len):
-            (node_feature, edges, edge_feature) = trainX[i]
-            labels = trainY[i]
-            (label_num, num_node_features) = np.shape(node_feature)
-            (edge_num, num_edge_features) = np.shape(edge_feature)
+            cur_seq = seqs[i]
+            cur_label = labels[i]
             ## compute M
-            Md = self.compute_M(self.grid, w, edge, seq, labels, states)
+            Md = self.compute_M(self.grid, w, self.edges, cur_seq, cur_label, self.states)
             ## compute alpha score
-            alpha = self.compute_alpha_score(self.grid, states, Md)
+            alpha = self.compute_alpha_score(self.grid, self.states, Md)
             ## compute beta score
-            beta = self.compute_beta_score(self.grid, states, Md)
+            beta = self.compute_beta_score(self.grid, self.states, Md)
             ## compute normalize term
+            pdb.set_trace()
             Z = 1.
             for M in Md:
-               Z *= M
+               Z = np.dot(Z,M)
+            Z = Z[0][0]
             ## compute marginal probability
-            prod, pairwise_prod = self.compute_marginal(self.grid, edges, Z, alpha, beta, Md) 
+            prod, pairwise_prod = self.compute_marginal(self.grid, self.edges, self.states, Z, alpha, beta, Md) 
             ## compute 
             ## compute gradient
-            g,logp = self.score(g, self.grid, states, seq, labels, prod, pairwise_prod)
+            g,logp = self.score(g, self.grid, self.edges, self.states, cur_seq, cur_label, prod, pairwise_prod, flag)
+            pdb.set_trace()
             for k in xrange(len(g)):
                 g[k] -= w[k]/sigma2
-            logp += -log(Z)
+            logp += -np.log(Z)
             logl += logp
-         logl -= sum(w**2)/sigma2
-         return g, logl
+            if i % ITER_ROUND == 0: 
+                LOG(DEBUG, 'Processing sample %d/%d, l: %f'%(i, sample_len, logl ))
+                LOG(DEBUG, g )
+        logl -= sum(w**2)/sigma2
+        return g, logl                
 
-    def BFGS(self,D,epsilon=0.001):
+    def trainer(self, trainX, trainY):
+        (num_samples, dim) = np.shape(trainX)
+        (_, voxel_num) = np.shape(trainY)
+        w  = self.BFGS(dim* 2, trainX, trainY)
+        print w
+
+    def BFGS(self, D, trainX, trainY, epsilon=0.001):
         # D is 
-        w_new = np.zeros(D)
+        w_new = np.ones(D)
         B_new = np.identity(D)
-        while sum(abs(d)) < epsilon:
+        num_iter = 0
+        while num_iter == 0 or sum(abs(d)) < epsilon:
             w_old, B_old = w_new, B_new
-            self.objective_and_gradients_batch()
-            d = np.linalg.inv(B_old) * gradientL(w_old)
-            mu = max_step(w_old,d)
+            g_old, l_old = self.objective_and_gradients_batch(trainX, trainY, w_old, 0)
+            d = np.linalg.inv(B_old) * g_old
+            print 'Round %d, error: %f'%(num_iter, sum(abs(d)))
+#mu = self.max_step(0, trainX, trainY, w_old,d)
+            mu = self.max_step(1, num_iter)
             w_new = w_old + mu* d
-            y = gradientL(w_new) - gradientL(w_old)
+            g_new, l_new = self.objective_and_gradients_batch(trainX, trainY, w_new, 2)
+            y = g_new - g_old
             # tmp terms: 
             dyt = np.dot(d, y.transpose())
             ddt = np.dot(d, d.transpose())
@@ -71,21 +88,46 @@ class CRF_SOLVER(object):
             eigvec = np.identity(D) - dyt/ytd
 
             B_new = np.dot(np.dot(eigvec, B_old), eigvec) + mu * ddt / ytd
+            num_iter += 1
         return w_new
-        
+
+    def max_step(self, es, *args):
+        if es == 0:
+            maxl = sys.min
+            max_mu = 0
+            if len(args) < 4:
+                raise IOError
+            trainX = args[0]
+            trainY = args[1]
+            w_old = args[2]
+            d = args[3]
+            for mu in np.arange(0,1,0.1):
+                g, l = self.objective_and_gradients_batch(trainX, trainY, w_old + mu*d ) 
+                if l > maxl:
+                    maxl = l
+                    max_mu = mu
+        else:
+            if len(args) < 1:
+                raise IOError
+            mu_init = 10
+            num_iter = args[0]
+            max_mu = mu_init * 1./ num_iter
+        return max_mu
+
     def unary_func(self, node, dim, state, value ):
-        return np.log(self.histo[node][dim][state][self.rss_range(value)])
+        return np.log(self.histo[node][dim][int(state)][self.rss_range(value)])
 
     def pairwise_func(self, edge, dim, state, value):
-        return -(1 + np.exp(-( self.histo[edge[0]][dim][state[0]][self.rss_range(value[0])] 
-                            - self.histo[edge[1]][dim][state[1]][self.rss_range(value[1])]
+        return -(1 + np.exp(-( self.histo[edge[0]][dim][int(state[0])][self.rss_range(value)] 
+                            - self.histo[edge[1]][dim][int(state[1])][self.rss_range(value)]
                             )**2))/2 
+
     def get_unary_features(self, data, nodes, labels):
         num_unary_feature = len(data)
         return np.array([ [ self.unary_func(node, j, state, data[j] )
                                         for j in xrange(num_unary_feature) ]
-                                        for node, state in zip(nodes, labels)) 
-                                    ])
+                                        for node, state in zip(nodes, labels)]) 
+                             
     def get_pairwise_features(self, data, edges, labels):
         num_pairwise_feature = len(data)
         return np.array([[ self.pairwise_func(edge, j, [labels[edge[0]], labels[edge[1]]], data[j] )
@@ -106,76 +148,97 @@ class CRF_SOLVER(object):
         return _sum
 
     def pairwise_sum(self, w, data, edges, labels):
-        num_pairwise_feature = len(seq) 
-        num_edge = len(edges)
+        num_pairwise_feature = len(data) 
+        num_edges = len(edges)
         _sum = 0
         #for state1,state2  in zip(xrange(states), xrange(states)):
         #    state_index = state1* states + state2
         #    _sum += sum([ w[state_index * num_pairwise_feature + k]* pairwise_features[i][k] if labels[t[0]] == state1 and labels[t[1]] == state2 for k in xrange(num_pairwise_feature) for i, t in enumerate(edges) ])
-        pairwise_features = self.get_pairwise_features(data, edges, labels)
-        _sum += sum([ w[k]* pairwise_features[i][k] for k in xrange(num_pairwise_feature) for i, t in enumerate(edges) ])
+        if num_edges > 0:
+            pairwise_features = self.get_pairwise_features(data, edges, labels)
+            _sum += sum([ w[k]* pairwise_features[i][k] for k in xrange(num_pairwise_feature) for i, t in enumerate(edges) ])
         return _sum
 
-    def compute_M(self, grid, w, edge, seq, labels, states):
+    def get_Td(self, grid, d, edges, pre_nodes):
+        cur_nodes, sub_edges_index = [], []
         (M, N) = np.shape(grid)
-        (n_nodes, num_unary_features) = np.shape(unary_features)
-        (num_edges, num_pairwise_features) = np.shape(pairwise_features)
+        start_x = min(d, M)
+        x = start_x
+        while x >= 1 and d - x + 1 <= N:
+            node_id = [x, d + 1 - x]
+            x -= 1
+            node =  np.where(np.all(self.mapper == node_id, axis = 1))    
+            if len(node) != 0:
+                cur_nodes.append(node[0][0])
+        for i, t in enumerate(edges):
+            if (t[0] in pre_nodes and t[1] in cur_nodes) or (t[1] in pre_nodes and t[0] in cur_nodes):
+                sub_edges_index.append(i)       
+        sub_edges = edges[sub_edges_index]
+        return cur_nodes, sub_edges
+
+    def compute_M(self, grid, w, edges, seq, labels, states):
+        num_unary_features = len(seq)
+        voxel_num = len(labels)
+        (M, N) = np.shape(grid)
         Md = [] 
-        pre_nodes = []
+        pre_nodes = [-1]
         pre_labels = [-1]
-        for d in xrange(1, M+N):
-            cur_nodes = [ self.map_index[ d - 1 - i ][i] for i in xrange(d) ]    
-            sub_edges_index = [ i if t[0] in pre_nodes and t[1] in cur_nodes or t[1] in pre_nodes and t[0] in cur_nodes for i, t in enumerate(edges) ]
-            sub_edges = edges[sub_edges_index]
-            sub_edge_features = pairwise_features[sub_edges_index]
+        for d in xrange(1, M+N+1):
+            cur_nodes, sub_edges = self.get_Td(grid, d, edges, pre_nodes)
             cur_labels = list(itertools.product([i for i in xrange(states)], repeat=len(cur_nodes))) 
-            Md_tmp = zeros(states ** pre_nodes, states ** cur_nodes)
+            if d == 1:
+                Md_tmp = np.ones((1, states ** len(cur_nodes)))
+            elif d == M + N:
+                Md_tmp = np.ones((states ** len(pre_nodes),1))
+            else:
+                Md_tmp = np.ones((states ** len(pre_nodes), states ** len(cur_nodes)))
             for j, curl in enumerate(cur_labels):
                 u_sum = self.unary_sum(w[0 : num_unary_features], seq, cur_nodes, curl)
                 for i, prel in enumerate(pre_labels):
-                    label = zeros(n_nodes)
-                    label[cur_nodes] = curl
-                    label[pre_nodes] = prel
+                    label = np.zeros(voxel_num)
+                    if d != M + N:
+                        label[cur_nodes] = curl
+                    if d != 1:
+                        label[pre_nodes] = prel
                     #unary_sum = self.unary_sum(w[: num_unary_features* states], unary_features[cur_nodes], states, curl)
                     #pairwise_sum = self.pairwise_sum(w[num_unary_feature,:], sub_edge_features, sub_edges, states, labels)
-                    p_sum = self.pairwise_sum(w[num_unary_feature:], seq, sub_edges, label)
+                    p_sum = self.pairwise_sum(w[num_unary_features:], seq, sub_edges, label)
                     Md_tmp[i][j] = np.exp(u_sum + p_sum)
             Md.append(np.array(Md_tmp)) 
             pre_nodes = cur_nodes
             pre_labels = cur_labels
-         return Md
+        return Md
+
     def compute_alpha_score(self, grid, states, Md):
         (M, N) = np.shape(grid)
         alpha = []
         # initial
         alpha.append([1])
         for d in xrange(1, M + N + 1):
-            alpha.append(np.dot( alpha[d-1], Md[d]) )
+            alpha.append(np.dot( alpha[d-1], Md[d-1]) )
         return alpha
 
     def compute_beta_score(self, grid, states, Md):
         (M, N) = np.shape(grid)
-        beta = []
+        beta, reverse_beta = [], []
         # initial
-        bata.append([1])
-        for d in xrange(1, M + N + 1):
-            beta.append(np.transpose(np.dot(Md[M + N + 1 - d], beta[d-1]))
-        return beta.inverse()
+        beta.append([1])
+        for d in xrange(1, M + N + 1 ):
+            beta.append(np.transpose(np.dot(Md[M + N - d], beta[d - 1])))
+        for b in beta:
+            reverse_beta.append(b)
+        return reverse_beta
 
-    def compute_marginal(self, grid, edges, Z, alpha, beta, Md):
+    def compute_marginal(self, grid, edges, states, Z, alpha, beta, Md):
         (M, N) = np.shape(grid)
         num_edges = len(edges)
         prod = np.zeros((states, M*N) )
         pairwise_prod = np.zeros((states** 2, num_edges ))
-        pre_nodes = []
+        pre_nodes = [-1]
         pre_labels = [-1]
-        for d in xrange(1, M + N + 1 ):
-            cur_nodes = [ self.map_index[ d - 1 - i ][i] for i in xrange(d) ]    
-            sub_edges_index = [ i if t[0] in pre_nodes and t[1] in cur_nodes or t[1] in pre_nodes and t[0] in cur_nodes for i, t in enumerate(edges) ]
-            sub_edges = edges[sub_edges_index]
-            sub_edge_features = pairwise_features[sub_edges_index]
+        for d in xrange(1, M + N):
+            cur_nodes, sub_edges = self.get_Td(grid,d, edges, pre_nodes)
             cur_labels = list(itertools.product([i for i in xrange(states)], repeat=len(cur_nodes))) 
-            pre_labels = list(itertools.product([i for i in xrange(states)], repeat=len(pre_nodes))) 
             # marginal for unary
             for ci, curl in enumerate(cur_labels):
                 for i, node in enumerate(cur_nodes):
@@ -184,91 +247,153 @@ class CRF_SOLVER(object):
                             prod[state][node] += alpha[d][ci]* beta[d][ci]/Z
             for si, sub_edge in enumerate(sub_edges):
                 (s, t) = sub_edge
-                for ci, curl in enumerate(curl_labels):
+                for ci, curl in enumerate(cur_labels):
                     for pi, prel in enumerate(pre_labels):
                         for state1 in xrange(states):
                             for state2 in xrange(states):
                                 state_id = state1* states + state2
-                                edge_id = edges.index(sub_edge)
-                                ni = cur_nodes.index(s)
-                                pni = pre_nodes.index(t)
+                                edge_id = np.where(np.all(edges == sub_edge, axis = 1))[0][0]    
+                                if s in cur_nodes:
+                                    ni = np.where(cur_nodes == s)[0][0]
+                                    pni = np.where(pre_nodes == t)[0][0]    
+                                else:
+                                    ni = np.where(cur_nodes == t)[0][0]
+                                    pni = np.where(pre_nodes == s)[0][0]    
+                               
                                 if curl[ni] == state1 and prel[pni] == state2:
-                                    pairwise_prod[state_id][edge_id] += alpha[d-1][ci]* Md[ci][[pi] * beta[d][pi]
-
+                                    pairwise_prod[state_id][edge_id] += alpha[d-1][pi]* Md[d-1][pi][ci] * beta[d][ci]
+            pre_nodes = cur_nodes
+            pre_labels = cur_labels 
         return prod, pairwise_prod 
+    def vector_sum(self, vec):
+        if not isinstance(vec, list) and not isinstance(vec, np.ndarray):
+            return vec
+        while isinstance(vec,list) or isinstance(vec, np.ndarray):
+            vec = sum(vec)
+        return vec
 
-    def score(self, g, grid, states, seq, label, prod, pairwise_prod):
+    def score(self, g, grid, edges, states, seq, label, prod, pairwise_prod, flag):
+        # flag : 0: both of gradient and objective function
+        #        1: gradient only
+        #        2: objective function only
         (M, N) = np.shape(grid)
-        (n_nodes, num_unary_features) = np.shape(unary_features)
-        (num_edges, num_pairwise_features) = np.shape(pairwise_features)
-        Md = [] 
+        num_unary_features, num_pairwise_features = len(seq), len(seq)
         logp = 0
-        pre_nodes = []
+        pre_nodes = [-1]
         pre_labels = [-1]
         for d in xrange(1, M+N):
-            cur_nodes = [ self.map_index[ d - 1 - i ][i] for i in xrange(d) ]    
-            sub_edges_index = [ i if t[0] in pre_nodes and t[1] in cur_nodes or t[1] in pre_nodes and t[0] in cur_nodes for i, t in enumerate(edges) ]
-            sub_edges = edges[sub_edges_index]
-            sub_edge_features = pairwise_features[sub_edges_index]
+            cur_nodes, sub_edges = self.get_Td(grid, d, edges, pre_nodes)
             cur_labels = list(itertools.product([i for i in xrange(states)], repeat=len(cur_nodes))) 
             ## empirical labels
             em_unary_features = self.get_unary_features(seq, cur_nodes, label)
-            ## probability labels
-            pb_unary_features = self.get_unary_features(seq, cur_nodes, )
-            for k in xrange(num_unary_feature):
-                g[k] += sum( em_unary_features[:,k] ) - sum([ (self.get_unary_features(seq, node, state))[0][k]* prod[state][node] for node in cur_nodes for state in xrange(states) ])   
-            pb_label = label
             em_pairwise_features = self.get_pairwise_features(seq, sub_edges, label)
-            logp += sum(sum(em_unary_features)) + sum(sum(em_pairwise_features))
-            for k in xrange(num_pairwise_features):
-                tmp = 0
-                tmp += sum(em_pairwise_features[:,k]) 
-                for edge in sub_edges:
-                    for state1 in xrange(states):
-                        for state2 in xrange(states):
-                            pb_label[edge[0]] = state1
-                            pb_label[edge[1]] = state2
-                            cur_f = self.get_pairwise_features(seq, edge, pb_label)
-                            tmp -= cur_f[0][k]* pairwise_prod[state1* states + state2][edge]
-                g[k + num_unary_features] += tmp
+            logp += self.vector_sum(em_unary_features) + self.vector_sum(em_pairwise_features)
+            ## probability labels
+            if flag != 2:
+                for k in xrange(num_unary_features):
+                    g[k] += sum( em_unary_features[:,k] ) - sum([ (self.get_unary_features(seq, [node], [state]))[0][k]* prod[state][node] for node in cur_nodes for state in xrange(states) ])   
+                pb_label = label
+                for k in xrange(num_pairwise_features):
+                    if len(sub_edges) == 0:
+                        break 
+                    tmp = 0
+                    tmp += self.vector_sum(em_pairwise_features[:,k]) 
+                    for edge in sub_edges:
+                        for state1 in xrange(states):
+                            for state2 in xrange(states):
+                                pb_label[edge[0]] = state1
+                                pb_label[edge[1]] = state2
+                                cur_f = self.get_pairwise_features(seq, [edge], pb_label)
+                                edge_id = np.where(np.all(edges == edge, axis = 1))[0][0]    
+                                tmp -= cur_f[0][k]* pairwise_prod[state1* states + state2][edge_id]
+                    g[k + num_unary_features] += tmp
+            pre_nodes = cur_nodes
+            pre_labels = cur_labels
         return g, logp
 
+def pickle_save(fname, data):
+    with open(fname, 'wb') as output:
+        pickle.dump(data, output, pickle.HIGHEST_PROTOCOL)
+        print "saved to %s"%fname
+
+def pickle_load(fname):
+    with open(fname, 'rb') as _input:
+        return pickle.load(_input)
+
+def loadmat(filename):
+    '''
+    this function should be called instead of direct spio.loadmat
+    as it cures the problem of not properly recovering python dictionaries
+    from mat files. It calls the function check keys to cure all entries
+    which are still mat-objects
+    '''
+    data = spio.loadmat(filename, struct_as_record=False, squeeze_me=True)
+    return _check_keys(data)
+
+def _check_keys(dict):
+    '''
+    checks if entries in dictionary are mat-objects. If yes
+    todict is called to change them to nested dictionaries
+    '''
+    for key in dict:
+        if isinstance(dict[key], spio.matlab.mio5_params.mat_struct):
+            dict[key] = _todict(dict[key])
+    return dict        
+
+def _todict(matobj):
+    '''
+    A recursive function which constructs from matobjects nested dictionaries
+    '''
+    dict = {}
+    for strg in matobj._fieldnames:
+        elem = matobj.__dict__[strg]
+        if isinstance(elem, spio.matlab.mio5_params.mat_struct):
+            dict[strg] = _todict(elem)
+        elif isinstance(elem,np.ndarray):
+            dict[strg] = _tolist(elem)
+        else:
+            dict[strg] = elem
+    return dict
+
+def _tolist(ndarray):
+    '''
+    A recursive function which constructs lists from cellarrays 
+    (which are loaded as numpy ndarrays), recursing into the elements
+    if they contain matobjects.
+    '''
+    elem_list = []            
+    for sub_elem in ndarray:
+        if isinstance(sub_elem, spio.matlab.mio5_params.mat_struct):
+            elem_list.append(_todict(sub_elem))
+        elif isinstance(sub_elem,np.ndarray):
+            elem_list.append(_tolist(sub_elem))
+        else:
+            elem_list.append(sub_elem)
+    return elem_list 
 if __name__ == '__main__':
         
     file_p = '../../../data/exp6/mat/'
-    histo = loadmat(file_p + 'histo.mat')
-    edges = loadmat(file_p + 'edges.mat')
-    samples = loadmat(file_p + 'sample.mat')
-    #test = loadmat(file_p + 'M_test_fg_three_13_17_112.mat')
-    test = loadmat(file_p + 'M_test_fg_three_13_17_112.mat')
-    sample_label = loadmat(file_p + 'sample_label.mat')
-    histo = histo['histo']
-    edges = edges['edges']
-    samples = samples['M']
-    test_case = test['M_test']
-    sample_label = sample_label['label']
-    train_flag = 0
-    
+    samples = loadmat(file_p + 'sample.mat')['Train']
+    config = loadmat(file_p + 'config.mat')['Config']
+    test = loadmat(file_p + 'Test_fg_three_13_17_112.mat')['Test']
+    train_flag = 1 
     model_file = 'model.pkl'
     if train_flag:
-        crf_instance = CRF(histo, edges)
+        crf_instance = CRF_SOLVER(config)
+        trainX = np.array(samples['seq'])
+        tmpY = np.array(samples['label'])
+        voxel_num = len(crf_instance.mapper)
+        trainY = np.zeros((len(tmpY), voxel_num))
+        for i, y in enumerate(tmpY):
+            trainY[i][y-1] = 1
         crf_instance.trainer(trainX, trainY)
         pickle_save(model_file,crf_instance)
-        print crf_instance.learner.score(trainX, trainY), crf_instance.predict(trainX[0:2], True)
         pdb.set_trace()
 
     else:
         crf_instance = pickle_load(model_file)
 
-    [trainX, trainY] = crf_instance.generate_data(samples, sample_label)
-    print crf_instance.predict(trainX[0:2], True)
-    pdb.set_trace()
-    print crf_instance.predict(samples[0], False) 
 #labels = crf_instance.predict(test_case, 1)
 #crf_instance.score(trainX, trainY)
 #print crf_instance.predict(trainX)
-
-
-
-
 
