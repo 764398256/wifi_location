@@ -35,6 +35,7 @@ index = [mod(pos + row - 1, row) + 1, floor((pos + row - 1)/row)];
 sample_len = 10;
 stream_num = 3;
 subcarrier_num = 30;
+voxel_num = voxel_num + 1;
 M = zeros(voxel_num,stream_num, subcarrier_num,  sample_len*2);
 %generate edges
 edges = bfs(map, index);
@@ -49,10 +50,17 @@ for i= 1:numel(stand_file)
     disp(fname);
     tag = str2double(regexpi(fname, '[\d+]*', 'match'));
     load(strcat(file_folder,fname));
-    voxel_id = find(ismember(index, [tag(2), tag(3)], 'rows'));
-    h_avg_amp = amplitude(sample_csiM(:,:,:,1:sample_len));
-    static = length(strfind(fname, 'static'));
-    M(voxel_id, tag(1), :, ( static )* sample_len + 1: (static + 1) *sample_len ) = h_avg_amp;
+    if length(tag) > 1
+        voxel_id = find(ismember(index, [tag(2), tag(3)], 'rows'));
+         h_avg_amp = amplitude(sample_csiM(:,:,:,1:sample_len));
+        static = length(strfind(fname, 'static'));
+        M(voxel_id, tag(1), :, ( static )* sample_len + 1: (static + 1) *sample_len ) = h_avg_amp;
+    else
+        voxel_id = voxel_num;
+        h_avg_amp = amplitude(sample_csiM(:,:,:,1:sample_len*2));
+       M(voxel_id, tag(1), :,  1: 2*sample_len ) = h_avg_amp;
+    end
+
 end
 
 M = mean(M, 3);
@@ -72,9 +80,9 @@ Train.seq =  K;
 Train.label = label;
 
 
-config_file = char(strcat(mat_folder,'config.mat' ));
+config_file = char(strcat(mat_folder,'config_s10_empty.mat' ));
 save(config_file, 'Config');
-train_file = char(strcat(mat_folder, 'sample.mat'));
+train_file = char(strcat(mat_folder, 'sample_s10_empty.mat'));
 save(train_file, 'Train');
 
 
@@ -87,17 +95,17 @@ plot([-30+0.5:0.5:30], squeeze(histo(1,2,2, :)));
 
 end
 % generate test data for multiple targets
-M_test = zeros(stream_num, sample_len );
+M_test = zeros(sample_len, stream_num );
 for i = 1: numel(multi_tg_file)
 fname = multi_tg_file(i).name;
 disp(fname);
 prefix = fname(3:end-4);
 load(strcat(file_folder,fname));
 h_avg_amp = amplitude(sample_csiM(:,:,:,1:sample_len));
-M_test(i,:) = mean(h_avg_amp,1);
+M_test(:,i) = mean(h_avg_amp,1);
 end
 Test.seq=M_test;
-M_test_file =  char(strcat(mat_folder,'Test',prefix , '.mat' ));
+M_test_file =  char(strcat(mat_folder,'Test',prefix , '_s100.mat' ));
 save(M_test_file, 'Test');
 
 

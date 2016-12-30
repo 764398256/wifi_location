@@ -1,4 +1,5 @@
 import scipy.io as spio
+import scipy.optimize as op
 import numpy as np
 import pdb
 import itertools
@@ -10,6 +11,7 @@ mode =  sys.argv[1]
 def LOG(log_level, mesg):
     if log_level == DEBUG and mode == DEBUG:
         print mesg
+
 ITER_ROUND = 10
 class CRF_SOLVER(object):
     def __init__(self, config):
@@ -78,11 +80,21 @@ class CRF_SOLVER(object):
             g[k] += 2* lambda_* w[k]
         logl += lambda_*sum(w**2)
         return g, logl                
+    def objective(self, seqs, labels, w):
+        g, logp = self.objective_and_gradients_batch(seq, labels, w, 2)
+        return logp
+    
+    def gradient(self, seqs, labels, w):
+        g, logp = self.objective_and_gradients_batch(seq, labels, w, 1)
+        return g
 
     def trainer(self, trainX, trainY):
         (num_samples, dim) = np.shape(trainX)
         (_, voxel_num) = np.shape(trainY)
-        w  = self.BFGS(dim* 2, trainX, trainY)
+#w  = self.BFGS(dim* 2, trainX, trainY)
+        pdb.set_trace()
+        [w,f,d] = op.fmin_l_bfgs_b(self.objective_and_gradients_batch, np.zeros(dim**2, 1),None, args=(trainX, trainY, np.zeros(dim**2, 1)), disp=2 )
+        print 'minimum_function: %f'%f
         print w
 
     def BFGS(self, D, trainX, trainY, epsilon=0.001):

@@ -25,6 +25,13 @@ for i = 1: stream_num* dim
         histo(j, i, 2, :)  = conv (ho, gaussFilter, 'same')';
     end
 end
+% plot
+figure(2);
+subplot(121);
+for i = 1:
+plot(vo,1,)
+subplot(122);
+
 %fingerprint = reshape(histo, stream_num* dim*voxel_num*2*(srange(2) - srange(1))/step );
 end
 
