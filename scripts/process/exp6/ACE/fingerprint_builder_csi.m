@@ -36,15 +36,15 @@ for i = 1: stream_num* dim
         end
         tmp  = tmp/sum(sum(tmp));
         histo(j,i,1,:) = tmp;
-%         if i < dim*stream_num/2
-%             figure(1);
-%             subplot(121);
-%             plot(h);        
-%             hold on;
-%             subplot(122);
-%             plot(squeeze(histo(j, i, 1, :) ));
-%             hold on;
-%         end
+        if i < dim*stream_num/2
+            figure(1);
+            subplot(121);
+            plot(h);        
+            hold on;
+            subplot(122);
+            plot(squeeze(histo(j, i, 1, :) ));
+            hold on;
+        end
         [ho,~]= histcounts( reshape( M([1: (j-1), (j+1):end], s, d,:  ), sample_len*(voxel_num-1) ,1) , edges, 'Normalization','probability');
         tmp  = conv (ho, gaussFilter, 'same')';
         if sum(sum(squeeze(tmp))) ~= 0
@@ -59,7 +59,7 @@ for i = 1: stream_num* dim
 
     end
 end
-write_img = 0;
+write_img = 1;
   if write_img
 for dim_show = 1:dim
     f = figure(1);

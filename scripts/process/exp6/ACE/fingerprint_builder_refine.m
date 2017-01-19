@@ -30,7 +30,6 @@ for i = 1: stream_num* dim
         %assert(sum(sum(sum(sum(histo== 0)))) == 0);
         histo_flatten(j, 1,nbin*(i-1)+1:  nbin*(i)) = squeeze( histo(j, i, 1, :) );
         histo_flatten(j, 2, nbin*(i-1)+1:  nbin*(i)) = squeeze( histo(j, i, 2, :) );
-
     end
 end
         figure(1);
@@ -42,10 +41,11 @@ for j = voxel_num - 1: voxel_num
         h2 = plot(squeeze(histo_flatten(j,2,:)));
         le = [le; h2];
         la = [la; {sprintf('voxel %d, neg', j)}];
-
         hold on;
 end
 legend(le, la);
+xlabel('Bins');
+ylabel('Probability');
 lh=findall(gcf,'tag','legend');
 set(lh,'location','northeastoutside');
 disp(sum(sum(sum(sum(histo== 0)))) );

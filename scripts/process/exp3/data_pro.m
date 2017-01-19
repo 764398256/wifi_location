@@ -5,7 +5,10 @@ file_folder = strcat(data_path, 'data-2.4G20MC6/');
 figure_folder=strcat(data_path, 'figure/');
 mat_folder=strcat(data_path,'mat/');
 files = dir(strcat(file_folder,'*.dat'));
-addpath('../../../linux-80211n-csitool-supplementary/matlab/');
+if ~exist(mat_folder)
+    mkdir(mat_folder);
+end
+addpath('../../../../linux-80211n-csitool-supplementary/matlab/');
 for i = 1:numel(files)
  f_name = files(i).name;
  f_nonext=f_name(1:end-4);
